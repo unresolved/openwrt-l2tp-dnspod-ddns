@@ -1,0 +1,50 @@
+#!/bin/sh
+
+#####################################################################################################
+# DNSPod DDNS script for OpenWRT system
+# Author: unresolved
+# Github: https://github.com/unresolved/openwrt-l2tp-dnspod-ddns
+#
+# Notice:
+# 1. Change these variables value:
+#        login_token: dnspod login token (id,token)
+#        domain_id: dnspod domain id
+#        record_id: dnspod domain record id
+#        sub_domain: dnspod subdomain name
+#        interface_name: l2tp network interface name
+# 2. This script require curl support HTTPS protocol, you should install curl HTTPS support via opkg:
+#        opkg update
+#        opkg install wget ca-certificates openssl-util ca-bundle
+# 3. Don't call this script interval too short, some DNSPod api problems may occur
+#####################################################################################################
+login_token="<id>,<token>"
+domain_id="<your domain id>"
+record_id="<your domain record id>"
+sub_domain="<your subdomain>"
+interface_name="<your interface name>"
+####################################################################################################
+
+# write log function
+log()
+{
+	local tag=$0
+	local msg=$1
+	logger -s -p 6 -t $tag "$msg"
+}
+
+# get recorded ip in dns
+result=$(curl -s -d "login_token=${login_token}&format=json&domain_id=${domain_id}&record_id=${record_id}" -X POST https://dnsapi.cn/Record.Info)
+recorded_ip=$(jsonfilter -s "$result" -e "@.record.value")
+echo "dns recorded ip is [$recorded_ip]."
+
+# get interface current ip
+current_ip=$(ifconfig $interface_name | grep "inet addr" | sed s/^.*addr://g | sed s/\ \ P-t-P.*$//g)
+echo "interface $interface_name current ip is [$current_ip]."
+
+if [ "$current_ip" == "$recorded_ip" ]; then
+	echo "the values are the same, do nothing."
+else
+	log "dns recorded ip is [$recorded_ip], current ip is [$current_ip], updating..."
+	result=$(curl -s -d "login_token=${login_token}&format=json&lang=cn&error_on_empty=no&domain_id=${domain_id}&record_id=${record_id}&sub_domain=${sub_domain}&value=${current_ip}&record_type=A&record_line=默认" -X POST https://dnsapi.cn/Record.Modify)
+	log "api query result: $result"
+fi
